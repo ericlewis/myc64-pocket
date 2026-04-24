@@ -18,7 +18,7 @@
  *
  */
 
-module spram(clk, rst, ce, we, oe, addr, di, do);
+module apf_spram(clk, rst, ce, we, oe, addr, di, do);
 	//
 	// Default address and data buses width (1024*32)
 	//

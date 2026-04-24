@@ -1,0 +1,84 @@
+{
+    "data": {
+        "magic": "APF_VER_1",
+        "data_slots": [
+    {
+        "name": "& Start CRT",
+        "id": "0",
+        "required": false,
+        "deferload": true,
+        "parameters": 9,
+        "filename": "",
+        "extensions": ["crt"]
+    },
+    {
+        "name": "& Start PRG",
+        "id": "1",
+        "required": false,
+        "deferload": true,
+        "parameters": 9,
+        "filename": "",
+        "extensions": ["prg"]
+    },
+    {
+        "name": "G64 Slot",
+        "id": "2",
+        "required": false,
+        "deferload": true,
+        "parameters": 9,
+        "filename": "",
+        "extensions": ["g64"]
+    },
+    {
+        "name": "Basic ROM",
+        "id": "200",
+        "required": true,
+        "deferload": true,
+        "parameters": 8,
+        "filename": "basic.bin",
+        "extensions": ["bin"],
+        "address": 0
+    },
+    {
+        "name": "Character ROM",
+        "id": "201",
+        "required": true,
+        "deferload": true,
+        "parameters": 8,
+        "filename": "characters.bin",
+        "extensions": ["bin"],
+        "address": 0
+    },
+    {
+        "name": "Kernal ROM",
+        "id": "202",
+        "required": true,
+        "deferload": true,
+        "parameters": 8,
+        "filename": "kernal.bin",
+        "extensions": ["bin"],
+        "address": 0
+    },
+    {
+        "name": "1540-c000 ROM",
+        "id": "203",
+        "required": true,
+        "deferload": true,
+        "parameters": 8,
+        "filename": "1540-c000.bin",
+        "extensions": ["bin"],
+        "address": 0
+    },
+    {
+        "name": "1541-e000 ROM",
+        "id": "204",
+        "required": true,
+        "deferload": true,
+        "parameters": 8,
+        "filename": "1541-e000.bin",
+        "extensions": ["bin"],
+        "address": 0
+    }
+    ]
+    }
+}

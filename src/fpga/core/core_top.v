@@ -437,7 +437,7 @@ module core_top (
     if (audgen_lrck_cnt == 31) begin
       // switch channels
       audgen_lrck  <= ~audgen_lrck;
-      audgen_shift <= {sid_wave, 16'h0};  // XXX: sid_wave coming from different clock domain!
+      audgen_shift <= audgen_lrck ? {mister_audio_r[17:2], 16'h0} : {mister_audio_l[17:2], 16'h0};
     end
   end
 
@@ -494,8 +494,25 @@ module core_top (
   synch_3 #(.WIDTH(16)) s_cont3_trig (cont3_trig, cont3_trig_s, clk_8mhz);
   synch_3 #(.WIDTH(16)) s_cont4_trig (cont4_trig, cont4_trig_s, clk_8mhz);
 
-  wire [23:0] c64_color_rgb;
-  wire [15:0] sid_wave;
+  reg  [23:0] c64_color_rgb;
+  wire [17:0] mister_audio_l;
+  wire [17:0] mister_audio_r;
+  wire [ 7:0] mister_r;
+  wire [ 7:0] mister_g;
+  wire [ 7:0] mister_b;
+  wire        mister_hsync;
+  wire        mister_vsync;
+  wire        mister_hsync_out;
+  wire        mister_vsync_out;
+  wire        mister_hblank;
+  wire        mister_vblank;
+  reg         c64_video_hs;
+  reg         c64_video_vs;
+  reg         c64_video_de;
+
+  assign video_hs = c64_video_hs;
+  assign video_vs = c64_video_vs;
+  assign video_de = c64_video_de;
 
   reg [6:0] joystick1;
 
@@ -548,43 +565,185 @@ module core_top (
   assign debug_1mhz_ph1_en = clk_8mhz_1mhz_ph1_en;
   assign debug_1mhz_ph2_en = clk_8mhz_1mhz_ph2_en;
 
-  myc64_top u_myc64 (
-      .rst(ph_synced_rst),
-      .clk(clk_8mhz),
-      .i_clk_1mhz_ph1_en(clk_8mhz_1mhz_ph1_en),
-      .i_clk_1mhz_ph2_en(clk_8mhz_1mhz_ph2_en),
-      .o_vid_rgb(c64_color_rgb),
-      .o_vid_hsync(video_hs),
-      .o_vid_vsync(video_vs),
-      .o_vid_en(video_de),
-      .o_wave(sid_wave),
-      .i_keyboard_mask(keyboard_mask),
-      .i_joystick1(joystick1),
-      .i_joystick2(joystick2),
-      .o_bus_addr(c64_bus_addr),
-      .i_rom_basic_data(c64_rom_basic_data),
-      .i_rom_char_data(c64_rom_char_data),
-      .i_rom_kernal_data(c64_rom_kernal_data),
-      .i_ram_main_data(c64_ram_rdata),
-      .o_ram_main_data(c64_ram_wdata),
-      .o_ram_main_we(c64_ram_we),
-      .o_iec_atn_out(iec_atn),
-      .i_iec_data_in(iec_data),
-      .o_iec_data_out(iec_c64_data_out),
-      .i_iec_clock_in(iec_clock),
-      .o_iec_clock_out(iec_c64_clock_out),
-      .i_cart_type(c64_ctrl[6:5]),
-      .o_cart_addr(c64_cart_addr),
-      .o_cart_we(c64_cart_we),
-      .i_cart_data(c64_cart_idata),
-      .o_cart_data(c64_cart_odata),
-      // Debug signals
-      .o_debug_6510_valid(debug_c64_cpu_valid),
-      .o_debug_6510_sync(debug_c64_cpu_sync),
-      .o_debug_6510_addr(debug_c64_cpu_addr),
-      .o_debug_6510_data(debug_c64_cpu_data),
-      .o_debug_6510_regs(debug_c64_cpu_regs)
+  wire [6:0] joystick1_c64 = {joystick1[6:4], joystick1[0], joystick1[1], joystick1[2], joystick1[3]};
+  wire [6:0] joystick2_c64 = {joystick2[6:4], joystick2[0], joystick2[1], joystick2[2], joystick2[3]};
+
+  wire        c64_pause;
+  wire        c64_io_cycle;
+  wire        c64_ext_cycle;
+  wire        c64_refresh;
+  wire        c64_nmi_ack;
+  wire        c64_freeze_key;
+  wire        c64_mod_key;
+  wire        c64_tape_play;
+  wire        c64_dma_cycle;
+  wire [ 7:0] c64_dma_din;
+  wire        c64_cass_motor;
+  wire        c64_cass_write;
+  wire        c64_roml;
+  wire        c64_romh;
+  wire        c64_umaxromh;
+  wire        c64_ioe;
+  wire        c64_iof;
+  wire [ 7:0] c64_pb_o;
+  wire        c64_pa2_o;
+  wire        c64_pc2_n_o;
+  wire        c64_sp2_o;
+  wire        c64_sp1_o;
+  wire        c64_cnt2_o;
+  wire        c64_cnt1_o;
+
+  wire        c64rom_wr = ext_rom_basic_we | ext_rom_kernal_we;
+  wire [13:0] c64rom_addr = ext_rom_basic_we ? {1'b0, ext_addr[12:0]} : {1'b1, ext_addr[12:0]};
+  wire        charrom_wr = ext_rom_char_we;
+  wire [11:0] charrom_addr = ext_addr[11:0];
+  wire        c64_cart_game;
+  wire        c64_cart_exrom;
+  wire        c64_cart_io_ext;
+  wire        c64_cart_rom_active;
+  wire [7:0]  c64_ram_rdata_core = c64_cart_rom_active ? c64_cart_idata : c64_ram_rdata;
+
+  fpga64_sid_iec u_mister_c64 (
+      .clk32(clk_32mhz),
+      .reset_n(~ph_synced_rst),
+      .bios(2'b00),
+
+      .pause(1'b0),
+      .pause_out(c64_pause),
+
+      .ps2_key(11'h000),
+      .keyboard_matrix(keyboard_mask),
+      .kbd_reset(ph_synced_rst),
+      .shift_mod(2'b11),
+
+      .ramAddr(c64_bus_addr),
+      .ramDin(c64_ram_rdata_core),
+      .ramDout(c64_ram_wdata),
+      .ramCE(),
+      .ramWE(c64_ram_we),
+
+      .io_cycle(c64_io_cycle),
+      .ext_cycle(c64_ext_cycle),
+      .refresh(c64_refresh),
+
+      .cia_mode(c64_cia_mode),
+      .turbo_mode(c64_turbo_mode),
+      .turbo_speed(c64_turbo_speed),
+
+      .vic_variant(c64_vic_variant),
+      .ntscMode(c64_video_standard),
+      .hsync(mister_hsync),
+      .vsync(mister_vsync),
+      .palette(c64_palette),
+      .r(mister_r),
+      .g(mister_g),
+      .b(mister_b),
+
+      .game(c64_cart_game),
+      .exrom(c64_cart_exrom),
+      .io_rom(1'b0),
+      .io_ext(c64_cart_io_ext),
+      .io_data(c64_cart_idata),
+      .irq_n(1'b1),
+      .nmi_n(1'b1),
+      .nmi_ack(c64_nmi_ack),
+      .romL(c64_roml),
+      .romH(c64_romh),
+      .UMAXromH(c64_umaxromh),
+      .IOE(c64_ioe),
+      .IOF(c64_iof),
+      .freeze_key(c64_freeze_key),
+      .mod_key(c64_mod_key),
+      .tape_play(c64_tape_play),
+
+      .dma_req(1'b0),
+      .dma_cycle(c64_dma_cycle),
+      .dma_addr(16'h0000),
+      .dma_dout(8'h00),
+      .dma_din(c64_dma_din),
+      .dma_we(1'b0),
+      .irq_ext_n(1'b1),
+
+      .joyA(joystick1_c64),
+      .joyB(joystick2_c64),
+      .pot1(8'hff),
+      .pot2(8'hff),
+      .pot3(8'hff),
+      .pot4(8'hff),
+
+      .audio_l(mister_audio_l),
+      .audio_r(mister_audio_r),
+      .sid_filter(2'b11),
+      .sid_ver(c64_sid_model),
+      .sid_mode(c64_sid_mode),
+      .sid_cfg(c64_sid_cfg),
+      .sid_fc_off_l(13'h0000),
+      .sid_fc_off_r(13'h0000),
+      .sid_ld_clk(clk_32mhz),
+      .sid_ld_addr(12'h000),
+      .sid_ld_data(16'h0000),
+      .sid_ld_wr(1'b0),
+      .sid_digifix(c64_sid_digifix),
+
+      .pb_i(8'hff),
+      .pb_o(c64_pb_o),
+      .pa2_i(1'b1),
+      .pa2_o(c64_pa2_o),
+      .pc2_n_o(c64_pc2_n_o),
+      .flag2_n_i(1'b1),
+      .sp2_i(1'b1),
+      .sp2_o(c64_sp2_o),
+      .sp1_i(1'b1),
+      .sp1_o(c64_sp1_o),
+      .cnt2_i(1'b1),
+      .cnt2_o(c64_cnt2_o),
+      .cnt1_i(1'b1),
+      .cnt1_o(c64_cnt1_o),
+
+      .iec_data_o(iec_c64_data_out),
+      .iec_data_i(iec_data),
+      .iec_clk_o(iec_c64_clock_out),
+      .iec_clk_i(iec_clock),
+      .iec_atn_o(iec_atn),
+
+      .c64rom_addr(c64rom_addr),
+      .c64rom_data(ext_data),
+      .c64rom_wr(c64rom_wr),
+      .charrom_addr(charrom_addr),
+      .charrom_data(ext_data),
+      .charrom_wr(charrom_wr),
+
+      .cass_motor(c64_cass_motor),
+      .cass_write(c64_cass_write),
+      .cass_sense(1'b1),
+      .cass_read(1'b1)
   );
+
+  video_sync u_mister_video_sync (
+      .clk32(clk_32mhz),
+      .pause(c64_pause),
+      .hsync(mister_hsync),
+      .vsync(mister_vsync),
+      .ntsc(c64_video_standard),
+      .wide(1'b0),
+      .hsync_out(mister_hsync_out),
+      .vsync_out(mister_vsync_out),
+      .hblank(mister_hblank),
+      .vblank(mister_vblank)
+  );
+
+  always @(posedge clk_8mhz) begin
+    c64_color_rgb <= {mister_r, mister_g, mister_b};
+    c64_video_hs  <= mister_hsync_out;
+    c64_video_vs  <= mister_vsync_out;
+    c64_video_de  <= ~(mister_hblank | mister_vblank);
+  end
+
+  assign debug_c64_cpu_valid = 1'b0;
+  assign debug_c64_cpu_sync  = 1'b0;
+  assign debug_c64_cpu_addr  = 16'h0000;
+  assign debug_c64_cpu_data  = 8'h00;
+  assign debug_c64_cpu_regs  = 64'h0000_0000_0000_0000;
 
   wire [15:0] c1541_bus_addr;
   wire [7:0] c1541_ram_rdata;
@@ -652,11 +811,11 @@ module core_top (
   //
   // Memories for MyC64
   //
-  spram #(
+  apf_spram #(
       .aw(16),
       .dw(8)
   ) u_c64_main_ram (
-      .clk (clk_8mhz),
+      .clk (clk_32mhz),
       .rst (rst),
       .ce  (1'b1),
       .oe  (1'b1),
@@ -667,7 +826,7 @@ module core_top (
   );
 
   wire [7:0] c64_rom_char_data;
-  spram #(
+  apf_spram #(
       .aw(12),
       .dw(8)
   ) u_c64_char_rom (
@@ -682,7 +841,7 @@ module core_top (
   );
 
   wire [7:0] c64_rom_basic_data;
-  spram #(
+  apf_spram #(
       .aw(13),
       .dw(8)
   ) u_c64_basic_rom (
@@ -697,7 +856,7 @@ module core_top (
   );
 
   wire [7:0] c64_rom_kernal_data;
-  spram #(
+  apf_spram #(
       .aw(13),
       .dw(8)
   ) u_c64_kernal_rom (
@@ -715,8 +874,31 @@ module core_top (
   wire [7:0] c64_cart_idata;
   wire [7:0] c64_cart_odata;
   wire c64_cart_we;
+
+  legacy_cartridge u_legacy_cartridge (
+      .clk(clk_32mhz),
+      .rst(ph_synced_rst),
+      .cart_type(c64_ctrl[6:5]),
+      .addr(c64_bus_addr),
+      .data_in(c64_ram_wdata),
+      .we(c64_ram_we),
+      .ioe(c64_ioe),
+      .iof(c64_iof),
+      .roml(c64_roml),
+      .romh(c64_romh | c64_umaxromh),
+      .exrom(c64_cart_exrom),
+      .game(c64_cart_game),
+      .mem_addr(c64_cart_addr),
+      .mem_we(c64_cart_we),
+      .mem_data(c64_cart_odata),
+      .mem_rdata(c64_cart_idata),
+      .data_out(),
+      .io_ext(c64_cart_io_ext),
+      .rom_active(c64_cart_rom_active)
+  );
+
 `ifdef __VERILATOR__XXX
-  spram #(
+  apf_spram #(
       .aw(21),
       .dw(8)
   ) u_c64_cart_rom_lo (
@@ -787,7 +969,7 @@ module core_top (
   //
   // Memories for My1541
   //
-  spram #(
+  apf_spram #(
       .aw(11),
       .dw(8)
   ) u_c1541_ram (
@@ -801,7 +983,7 @@ module core_top (
       .we  (c1541_ram_we)
   );
 
-  spram #(
+  apf_spram #(
       .aw(14),
       .dw(8)
   ) u_c1541_rom (
@@ -914,6 +1096,16 @@ module core_top (
   end
 
   reg [6:0] c64_ctrl;
+  reg       c64_video_standard = 1'b0; // 0=PAL, 1=NTSC
+  reg [1:0] c64_vic_variant = 2'b00;   // 656x, 856x, early 856x
+  reg [2:0] c64_palette = 3'b000;
+  reg [1:0] c64_turbo_mode = 2'b00;    // off, C128, smart
+  reg [1:0] c64_turbo_speed = 2'b00;   // 2x, 3x, 4x
+  reg [1:0] c64_sid_model = 2'b00;     // left/right 6581=0, 8580=1
+  reg [2:0] c64_sid_mode = 3'b000;
+  reg [3:0] c64_sid_cfg = 4'b0000;
+  reg       c64_sid_digifix = 1'b1;
+  reg       c64_cia_mode = 1'b0;       // 0=6526, 1=8521
   reg [12:0] c1541_track_len;
   always @(posedge clk_8mhz) begin
     if (rst) c64_ctrl <= 0;
@@ -979,7 +1171,7 @@ module core_top (
   genvar gi;
   generate
     for (gi = 0; gi < 4; gi = gi + 1) begin : ram
-      spram #(
+      apf_spram #(
           .aw(10),
           .dw(8)
       ) u_ram (
@@ -1030,6 +1222,16 @@ module core_top (
       case (bridge_addr)
         32'hA000_0000: osd_offset_x <= bridge_wr_data;
         32'hA000_0004: osd_offset_y <= bridge_wr_data;
+        32'hA000_0010: c64_video_standard <= bridge_wr_data[0];
+        32'hA000_0014: c64_palette <= bridge_wr_data[2:0];
+        32'hA000_0018: c64_turbo_mode <= bridge_wr_data[1:0];
+        32'hA000_001c: c64_turbo_speed <= bridge_wr_data[1:0];
+        32'hA000_0020: c64_sid_model <= bridge_wr_data[1:0];
+        32'hA000_0024: c64_vic_variant <= bridge_wr_data[1:0];
+        32'hA000_0028: c64_cia_mode <= bridge_wr_data[0];
+        32'hA000_002c: c64_sid_mode <= bridge_wr_data[2:0];
+        32'hA000_0030: c64_sid_cfg <= bridge_wr_data[3:0];
+        32'hA000_0034: c64_sid_digifix <= bridge_wr_data[0];
       endcase
     end
   end
