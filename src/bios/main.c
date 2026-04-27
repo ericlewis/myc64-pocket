@@ -32,8 +32,10 @@ void prgs_irq();
 
 void crts_irq();
 
-void g64_draw_status_bar();
-void g64_irq();
+void disks_draw_status_bar();
+void disks_init();
+void disks_irq();
+void disks_poll();
 
 void misc_handle();
 void misc_draw();
@@ -77,6 +79,7 @@ int main(void) {
   // Load 1540/1541 ROMs
   bridge_ds_read(203, 0, 8192, (uint8_t *)0x50040000);
   bridge_ds_read(204, 0, 8192, (uint8_t *)(0x50040000 + 8192));
+  disks_init();
 
   *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 2); // Joystick1 = cont2
   *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 1); // Joystick2 = cont1
@@ -96,6 +99,7 @@ int main(void) {
   IRQ_ENABLE();
 
   while (1) {
+    disks_poll();
     if (osd_mode_prev != osd_mode) {
       osd_clear();
       osd_mode_prev = osd_mode;
@@ -120,7 +124,7 @@ int main(void) {
       break;
     }
     case OSD_STATUS_BAR:
-      g64_draw_status_bar();
+      disks_draw_status_bar();
       break;
     case OSD_OFF:
       break;
@@ -141,7 +145,7 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
 
   prgs_irq();
   crts_irq();
-  g64_irq();
+  disks_irq();
 
   // Prologue
   cont1_key = *CONT1_KEY;

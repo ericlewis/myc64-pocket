@@ -30,7 +30,8 @@
 
 #define CRT_SLOT_ID 0
 #define PRG_SLOT_ID 1
-#define G64_SLOT_ID 2
+#define DISK8_SLOT_ID 2
+#define DISK9_SLOT_ID 3
 
 #define CONT1_KEY ((volatile uint32_t *)0x20000000)
 #define CONT2_KEY ((volatile uint32_t *)0x20000004)
@@ -50,8 +51,14 @@
 #define KEYB_MASK_1 ((volatile uint32_t *)0x30000008)
 #define C64_CTRL ((volatile uint32_t *)0x3000000c)
 
-#define C1541_STATUS ((volatile uint32_t *)0x30000100)
-#define C1541_TRACK_LEN ((volatile uint32_t *)0x30000104)
+#define DISK_STATUS ((volatile uint32_t *)0x30000100)
+#define DISK_LBA ((volatile uint32_t *)0x30000104)
+#define DISK_BLK_CNT ((volatile uint32_t *)0x30000108)
+#define DISK_ACK ((volatile uint32_t *)0x3000010c)
+#define DISK0_MOUNT ((volatile uint32_t *)0x30000110)
+#define DISK0_SIZE ((volatile uint32_t *)0x30000114)
+#define DISK1_MOUNT ((volatile uint32_t *)0x30000118)
+#define DISK1_SIZE ((volatile uint32_t *)0x3000011c)
 
 #define TARGET_0 ((volatile uint32_t *)0x40000000)
 #define TARGET_4 ((volatile uint32_t *)0x40000004)
@@ -69,6 +76,7 @@
 
 #define BRIDGE_DPRAM ((volatile uint8_t *)0x70000000)
 #define BRIDGE_DS_TABLE ((volatile uint32_t *)0x90000000)
+#define DISK_BRIDGE_BUFFER 0x60000000
 
 #define KEYB_BIT_dpad_up 0
 #define KEYB_BIT_dpad_down 1
@@ -118,6 +126,11 @@ uint16_t bridge_ds_get_uint16(uint16_t slot_id, uint32_t offset);
 uint32_t bridge_ds_get_uint32(uint16_t slot_id, uint32_t offset);
 void bridge_ds_read(uint16_t slot_id, uint32_t offset, uint32_t length,
                     uint8_t *dst);
+uint32_t bridge_ds_read_direct(uint16_t slot_id, uint32_t offset,
+                               uint32_t length, uint32_t bridge_addr);
+uint32_t bridge_ds_write_direct(uint16_t slot_id, uint32_t offset,
+                                uint32_t length, uint32_t bridge_addr);
+uint32_t bridge_ds_flush(uint16_t slot_id);
 
 //
 // OSD

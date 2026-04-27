@@ -21,13 +21,22 @@
         "extensions": ["prg"]
     },
     {
-        "name": "G64 Slot",
+        "name": "Drive 8",
         "id": "2",
         "required": false,
         "deferload": true,
-        "parameters": 9,
+        "parameters": 513,
         "filename": "",
-        "extensions": ["g64"]
+        "extensions": ["d64", "g64", "t64", "d81"]
+    },
+    {
+        "name": "Drive 9",
+        "id": "3",
+        "required": false,
+        "deferload": true,
+        "parameters": 513,
+        "filename": "",
+        "extensions": ["d64", "g64", "t64", "d81"]
     },
     {
         "name": "Basic ROM",

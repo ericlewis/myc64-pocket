@@ -59,3 +59,35 @@ void bridge_ds_read(uint16_t slot_id, uint32_t offset, uint32_t length,
     offset += chunk_size;
   }
 }
+
+uint32_t bridge_ds_read_direct(uint16_t slot_id, uint32_t offset,
+                               uint32_t length, uint32_t bridge_addr) {
+  *TARGET_20 = slot_id;
+  *TARGET_24 = offset;
+  *TARGET_28 = bridge_addr;
+  *TARGET_2C = length;
+  *TARGET_0 = 0x636D0180;
+  while ((*TARGET_0 >> 16) != 0x6F6B)
+    ;
+  return *TARGET_0 & 0xffff;
+}
+
+uint32_t bridge_ds_write_direct(uint16_t slot_id, uint32_t offset,
+                                uint32_t length, uint32_t bridge_addr) {
+  *TARGET_20 = slot_id;
+  *TARGET_24 = offset;
+  *TARGET_28 = bridge_addr;
+  *TARGET_2C = length;
+  *TARGET_0 = 0x636D0184;
+  while ((*TARGET_0 >> 16) != 0x6F6B)
+    ;
+  return *TARGET_0 & 0xffff;
+}
+
+uint32_t bridge_ds_flush(uint16_t slot_id) {
+  *TARGET_20 = slot_id;
+  *TARGET_0 = 0x636D0188;
+  while ((*TARGET_0 >> 16) != 0x6F6B)
+    ;
+  return *TARGET_0 & 0xffff;
+}
