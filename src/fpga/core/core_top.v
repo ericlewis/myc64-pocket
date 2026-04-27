@@ -316,6 +316,9 @@ module core_top (
 
   always @(*) begin
     casex (bridge_addr)
+      32'h6xxx_xxxx: begin
+        bridge_rd_data <= disk_bridge_rd_data;
+      end
       32'hF80020xx: begin
         bridge_rd_data <= dataslot_table_rd_data;
       end
@@ -586,8 +589,10 @@ module core_top (
   wire        c64_ioe;
   wire        c64_iof;
   wire [ 7:0] c64_pb_o;
+  wire [ 7:0] c64_pb_i;
   wire        c64_pa2_o;
   wire        c64_pc2_n_o;
+  wire        c64_flag2_n_i;
   wire        c64_sp2_o;
   wire        c64_sp1_o;
   wire        c64_cnt2_o;
@@ -685,12 +690,12 @@ module core_top (
       .sid_ld_wr(1'b0),
       .sid_digifix(c64_sid_digifix),
 
-      .pb_i(8'hff),
+      .pb_i(c64_pb_i),
       .pb_o(c64_pb_o),
       .pa2_i(1'b1),
       .pa2_o(c64_pa2_o),
       .pc2_n_o(c64_pc2_n_o),
-      .flag2_n_i(1'b1),
+      .flag2_n_i(c64_flag2_n_i),
       .sp2_i(1'b1),
       .sp2_o(c64_sp2_o),
       .sp1_i(1'b1),
@@ -745,46 +750,364 @@ module core_top (
   assign debug_c64_cpu_data  = 8'h00;
   assign debug_c64_cpu_regs  = 64'h0000_0000_0000_0000;
 
-  wire [15:0] c1541_bus_addr;
-  wire [7:0] c1541_ram_rdata;
-  wire [7:0] c1541_ram_wdata;
-  wire [7:0] c1541_rom_data;
-  wire c1541_ram_we;
+  assign debug_c1541_cpu_valid = 1'b0;
+  assign debug_c1541_cpu_sync  = 1'b0;
+  assign debug_c1541_cpu_addr  = 16'h0000;
+  assign debug_c1541_cpu_data  = 8'h00;
+  assign debug_c1541_cpu_regs  = 64'h0000_0000_0000_0000;
 
-  wire [10:0] c1541_track_mem_addr;
-  wire [31:0] c1541_track_mem_data;
-  wire [6:0] c1541_track_no;
-  wire c1541_led_on;
-  wire c1541_motor_on;
+  reg drive_ce;
+  always @(posedge clk_32mhz) begin
+    if (rst) drive_ce <= 1'b0;
+    else drive_ce <= ~drive_ce;
+  end
 
-  my1541_top u_my1541 (
-      .rst(ph_synced_rst),
-      .clk(clk_8mhz),
-      .i_clk_1mhz_ph1_en(clk_8mhz_1mhz_ph1_en),
-      .i_clk_1mhz_ph2_en(clk_8mhz_1mhz_ph2_en),
-      .o_addr(c1541_bus_addr),
-      .i_ram_data(c1541_ram_rdata),
-      .o_ram_data(c1541_ram_wdata),
-      .o_ram_we(c1541_ram_we),
-      .i_rom_data(c1541_rom_data),
-      .o_track_addr(c1541_track_mem_addr),
-      .i_track_data(c1541_track_mem_data),
-      .i_track_len(c1541_track_len),
-      .o_track_no(c1541_track_no),
-      .o_led_on(c1541_led_on),
-      .o_motor_on(c1541_motor_on),
-      .i_iec_atn_in(iec_atn),
-      .i_iec_data_in(iec_data),
-      .o_iec_data_out(iec_1541_data_out),
-      .i_iec_clock_in(iec_clock),
-      .o_iec_clock_out(iec_1541_clock_out),
-      // Debug signals
-      .o_debug_6502_valid(debug_c1541_cpu_valid),
-      .o_debug_6502_sync(debug_c1541_cpu_sync),
-      .o_debug_6502_addr(debug_c1541_cpu_addr),
-      .o_debug_6502_data(debug_c1541_cpu_data),
-      .o_debug_6502_regs(debug_c1541_cpu_regs)
+  wire [1:0] drive_led;
+  wire       disk_ready;
+  wire [7:0] drive_par_o;
+  wire       drive_stb_o;
+  wire [7:0] drive_par_i = c64_pb_o;
+  wire       drive_stb_i = c64_pc2_n_o;
+
+  assign c64_pb_i = drive_par_o;
+  assign c64_flag2_n_i = drive_stb_o;
+
+  wire [31:0] iec_sd_lba[2];
+  wire [ 5:0] iec_sd_blk_cnt[2];
+  wire [ 1:0] iec_sd_rd;
+  wire [ 1:0] iec_sd_wr;
+  reg  [ 1:0] iec_sd_ack;
+  reg  [13:0] iec_sd_buff_addr;
+  reg  [ 7:0] iec_sd_buff_dout;
+  wire [ 7:0] iec_sd_buff_din[2];
+  reg         iec_sd_buff_wr;
+  wire [ 1:0] iec_img_mounted;
+  wire        iec_img_readonly;
+  wire [31:0] iec_img_size;
+  wire [ 1:0] iec_img_type;
+  wire [15:0] iec_rom_addr;
+  wire        iec_rom_wr;
+
+  assign iec_rom_addr = {1'b0, ext_addr[14:0]};
+  assign iec_rom_wr   = ext_rom_1541_we;
+
+  iec_drive #(.PARPORT(1), .DUALROM(1), .DRIVES(2)) u_iec_drive (
+      .clk(clk_32mhz),
+      .reset({ph_synced_rst | ~drive_mounted[1] | disk_reset_drive[1],
+              ph_synced_rst | ~drive_mounted[0] | disk_reset_drive[0]}),
+      .ce(drive_ce),
+
+      .pause(1'b0),
+
+      .img_mounted(iec_img_mounted),
+      .img_readonly(iec_img_readonly),
+      .img_size(iec_img_size),
+      .img_type(iec_img_type),
+      .drive_rpm(disk_drive_rpm),
+      .drive_wobble(disk_drive_wobble),
+
+      .led(drive_led),
+      .disk_ready(disk_ready),
+
+      .iec_atn_i(iec_atn),
+      .iec_data_i(iec_data),
+      .iec_clk_i(iec_clock),
+      .iec_data_o(iec_1541_data_out),
+      .iec_clk_o(iec_1541_clock_out),
+
+      .par_data_i(drive_par_i),
+      .par_stb_i(drive_stb_i),
+      .par_data_o(drive_par_o),
+      .par_stb_o(drive_stb_o),
+
+      .clk_sys(clk_32mhz),
+
+      .sd_lba(iec_sd_lba),
+      .sd_blk_cnt(iec_sd_blk_cnt),
+      .sd_rd(iec_sd_rd),
+      .sd_wr(iec_sd_wr),
+      .sd_ack(iec_sd_ack),
+      .sd_buff_addr(iec_sd_buff_addr),
+      .sd_buff_dout(iec_sd_buff_dout),
+      .sd_buff_din(iec_sd_buff_din),
+      .sd_buff_wr(iec_sd_buff_wr),
+
+      .rom_addr(iec_rom_addr),
+      .rom_data(ext_data),
+      .rom_wr(iec_rom_wr),
+      .rom_std(1'b1)
   );
+
+  localparam [3:0] DISK_ST_IDLE          = 4'd0;
+  localparam [3:0] DISK_ST_CAPTURE_SET   = 4'd1;
+  localparam [3:0] DISK_ST_CAPTURE_WAIT0 = 4'd2;
+  localparam [3:0] DISK_ST_CAPTURE_WAIT1 = 4'd3;
+  localparam [3:0] DISK_ST_CAPTURE_WR    = 4'd4;
+  localparam [3:0] DISK_ST_COMMIT_SET    = 4'd5;
+  localparam [3:0] DISK_ST_COMMIT_WAIT0  = 4'd6;
+  localparam [3:0] DISK_ST_COMMIT_WAIT1  = 4'd7;
+  localparam [3:0] DISK_ST_COMMIT_LOAD   = 4'd8;
+  localparam [3:0] DISK_ST_COMMIT_WR     = 4'd9;
+  localparam [3:0] DISK_ST_ACK           = 4'd10;
+
+  wire [31:0] disk_bridge_rd_data;
+  wire [31:0] disk_cpu_rd_data;
+  reg  [13:0] disk_buf_addr;
+  wire [ 7:0] disk_buf_din;
+  wire [ 7:0] disk_buf_dout;
+  wire [ 7:0] disk_cpu_buf_dout;
+  reg         disk_buf_we;
+  wire        disk_cpu_buf_wr =
+      cpu_mem_valid && !cpu_mem_ready && cpu_mem_wstrb == 4'b1111 &&
+      cpu_mem_addr[31:28] == 4'h6;
+
+  bridge_byte_buffer #(.AW(14)) u_disk_bridge_buffer (
+      .bridge_clk(clk_74a),
+      .bridge_wr(bridge_wr && bridge_addr[31:28] == 4'h6),
+      .bridge_addr(bridge_addr[13:2]),
+      .bridge_din(bridge_wr_data),
+      .bridge_dout(disk_bridge_rd_data),
+
+      .clk(clk_32mhz),
+      .addr(disk_buf_addr),
+      .din(disk_buf_din),
+      .we(disk_buf_we),
+      .dout(disk_buf_dout)
+  );
+
+  bridge_byte_buffer #(.AW(14)) u_disk_cpu_buffer (
+      .bridge_clk(clk_8mhz),
+      .bridge_wr(disk_cpu_buf_wr),
+      .bridge_addr(cpu_mem_addr[13:2]),
+      .bridge_din(cpu_mem_wdata),
+      .bridge_dout(disk_cpu_rd_data),
+
+      .clk(clk_32mhz),
+      .addr(disk_buf_addr),
+      .din(8'h00),
+      .we(1'b0),
+      .dout(disk_cpu_buf_dout)
+  );
+
+  reg [1:0] drive_mounted_cpu;
+  wire [1:0] drive_mounted;
+  synch_3 #(.WIDTH(2)) s_drive_mounted (drive_mounted_cpu, drive_mounted, clk_32mhz);
+
+  reg [31:0] disk_drive_size[2];
+  reg [1:0]  disk_drive_type[2];
+  reg [1:0]  disk_drive_readonly;
+  reg [1:0]  disk_mount_toggle;
+
+  wire [1:0] disk_mount_toggle_s;
+  wire       disk_mount0_rise, disk_mount0_fall;
+  wire       disk_mount1_rise, disk_mount1_fall;
+  synch_3 s_disk_mount0 (disk_mount_toggle[0], disk_mount_toggle_s[0], clk_32mhz, disk_mount0_rise, disk_mount0_fall);
+  synch_3 s_disk_mount1 (disk_mount_toggle[1], disk_mount_toggle_s[1], clk_32mhz, disk_mount1_rise, disk_mount1_fall);
+
+  wire [1:0] disk_mount_pulse = {disk_mount1_rise | disk_mount1_fall,
+                                 disk_mount0_rise | disk_mount0_fall};
+  assign iec_img_mounted = disk_mount_pulse;
+
+  reg [31:0] iec_img_size_r;
+  reg [1:0]  iec_img_type_r;
+  reg        iec_img_readonly_r;
+
+  assign iec_img_size     = iec_img_size_r;
+  assign iec_img_type     = iec_img_type_r;
+  assign iec_img_readonly = iec_img_readonly_r;
+
+  always @(posedge clk_32mhz) begin
+    if (disk_mount_pulse[0]) begin
+      iec_img_size_r     <= disk_drive_size[0];
+      iec_img_type_r     <= disk_drive_type[0];
+      iec_img_readonly_r <= disk_drive_readonly[0];
+    end
+    else if (disk_mount_pulse[1]) begin
+      iec_img_size_r     <= disk_drive_size[1];
+      iec_img_type_r     <= disk_drive_type[1];
+      iec_img_readonly_r <= disk_drive_readonly[1];
+    end
+  end
+
+  wire [1:0] disk_reset_drive = 2'b00;
+
+  reg        disk_cpu_ack_toggle;
+  reg [14:0] disk_commit_valid_len;
+  reg        disk_commit_empty_gcr;
+  reg        disk_commit_from_cpu;
+  wire       disk_cpu_ack_toggle_s;
+  wire       disk_cpu_ack_rise;
+  wire       disk_cpu_ack_fall;
+  wire       disk_cpu_ack_pulse = disk_cpu_ack_rise | disk_cpu_ack_fall;
+  synch_3 s_disk_cpu_ack (disk_cpu_ack_toggle, disk_cpu_ack_toggle_s, clk_32mhz,
+                          disk_cpu_ack_rise, disk_cpu_ack_fall);
+
+  reg [3:0]  disk_state;
+  reg        disk_req_valid;
+  reg        disk_req_write;
+  reg [1:0]  disk_req_drive;
+  reg [31:0] disk_req_lba;
+  reg [5:0]  disk_req_blk_cnt;
+  reg [14:0] disk_req_len;
+  reg [14:0] disk_service_idx;
+  reg [1:0]  disk_ack_drive;
+
+  wire [14:0] disk_req_len0 = ({9'd0, iec_sd_blk_cnt[0]} + 15'd1) << 8;
+  wire [14:0] disk_req_len1 = ({9'd0, iec_sd_blk_cnt[1]} + 15'd1) << 8;
+  wire        disk_service_busy = disk_state != DISK_ST_IDLE;
+  assign disk_buf_din = disk_req_drive[0] ? iec_sd_buff_din[1] :
+                                            iec_sd_buff_din[0];
+
+  always @(posedge clk_32mhz) begin
+    disk_buf_we      <= 1'b0;
+    iec_sd_buff_wr   <= 1'b0;
+    iec_sd_ack       <= 2'b00;
+
+    if (rst) begin
+      disk_state     <= DISK_ST_IDLE;
+      disk_req_valid <= 1'b0;
+    end
+    else begin
+      case (disk_state)
+        DISK_ST_IDLE: begin
+          if (!disk_req_valid) begin
+            if (iec_sd_wr[0]) begin
+              disk_req_valid   <= 1'b0;
+              disk_req_write   <= 1'b1;
+              disk_req_drive   <= 2'd0;
+              disk_ack_drive   <= 2'd0;
+              disk_req_lba     <= iec_sd_lba[0];
+              disk_req_blk_cnt <= iec_sd_blk_cnt[0];
+              disk_req_len     <= disk_req_len0;
+              disk_service_idx <= 15'd0;
+              disk_state       <= DISK_ST_CAPTURE_SET;
+            end
+            else if (iec_sd_wr[1]) begin
+              disk_req_valid   <= 1'b0;
+              disk_req_write   <= 1'b1;
+              disk_req_drive   <= 2'd1;
+              disk_ack_drive   <= 2'd1;
+              disk_req_lba     <= iec_sd_lba[1];
+              disk_req_blk_cnt <= iec_sd_blk_cnt[1];
+              disk_req_len     <= disk_req_len1;
+              disk_service_idx <= 15'd0;
+              disk_state       <= DISK_ST_CAPTURE_SET;
+            end
+            else if (iec_sd_rd[0]) begin
+              disk_req_valid   <= 1'b1;
+              disk_req_write   <= 1'b0;
+              disk_req_drive   <= 2'd0;
+              disk_req_lba     <= iec_sd_lba[0];
+              disk_req_blk_cnt <= iec_sd_blk_cnt[0];
+              disk_req_len     <= disk_req_len0;
+            end
+            else if (iec_sd_rd[1]) begin
+              disk_req_valid   <= 1'b1;
+              disk_req_write   <= 1'b0;
+              disk_req_drive   <= 2'd1;
+              disk_req_lba     <= iec_sd_lba[1];
+              disk_req_blk_cnt <= iec_sd_blk_cnt[1];
+              disk_req_len     <= disk_req_len1;
+            end
+          end
+          else if (disk_cpu_ack_pulse) begin
+            disk_ack_drive <= disk_req_drive;
+            if (disk_req_write) begin
+              disk_req_valid <= 1'b0;
+              disk_state     <= DISK_ST_IDLE;
+            end
+            else begin
+              disk_req_valid   <= 1'b0;
+              disk_service_idx <= 15'd0;
+              disk_state       <= DISK_ST_COMMIT_SET;
+            end
+          end
+        end
+
+        DISK_ST_CAPTURE_SET: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          iec_sd_buff_addr           <= disk_service_idx[13:0];
+          disk_buf_addr              <= disk_service_idx[13:0];
+          disk_state <= DISK_ST_CAPTURE_WAIT0;
+        end
+
+        DISK_ST_CAPTURE_WAIT0: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          disk_state <= DISK_ST_CAPTURE_WAIT1;
+        end
+
+        DISK_ST_CAPTURE_WAIT1: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          disk_state <= DISK_ST_CAPTURE_WR;
+        end
+
+        DISK_ST_CAPTURE_WR: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          disk_buf_we <= 1'b1;
+          if (disk_service_idx == disk_req_len - 15'd1) begin
+            disk_req_valid <= 1'b1;
+            disk_state     <= DISK_ST_IDLE;
+          end
+          else begin
+            disk_service_idx <= disk_service_idx + 15'd1;
+            disk_state       <= DISK_ST_CAPTURE_SET;
+          end
+        end
+
+        DISK_ST_COMMIT_SET: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          iec_sd_buff_addr           <= disk_service_idx[13:0];
+          disk_buf_addr              <= disk_service_idx[13:0];
+          disk_state                 <= DISK_ST_COMMIT_WAIT0;
+        end
+
+        DISK_ST_COMMIT_WAIT0: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          disk_state <= DISK_ST_COMMIT_WAIT1;
+        end
+
+        DISK_ST_COMMIT_WAIT1: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          disk_state <= DISK_ST_COMMIT_LOAD;
+        end
+
+        DISK_ST_COMMIT_LOAD: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          if (disk_commit_empty_gcr) begin
+            iec_sd_buff_dout <= (disk_service_idx < 15'd2) ? 8'h00 : 8'hff;
+          end
+          else if (disk_service_idx >= disk_commit_valid_len) begin
+            iec_sd_buff_dout <= 8'h00;
+          end
+          else if (disk_commit_from_cpu) begin
+            iec_sd_buff_dout <= disk_cpu_buf_dout;
+          end
+          else begin
+            iec_sd_buff_dout <= disk_buf_dout;
+          end
+          disk_state <= DISK_ST_COMMIT_WR;
+        end
+
+        DISK_ST_COMMIT_WR: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          iec_sd_buff_wr <= 1'b1;
+
+          if (disk_service_idx == disk_req_len - 15'd1) begin
+            disk_state <= DISK_ST_ACK;
+          end
+          else begin
+            disk_service_idx <= disk_service_idx + 15'd1;
+            disk_state       <= DISK_ST_COMMIT_SET;
+          end
+        end
+
+        DISK_ST_ACK: begin
+          iec_sd_ack[disk_ack_drive] <= 1'b1;
+          disk_state <= DISK_ST_IDLE;
+        end
+      endcase
+    end
+  end
 
   wire [15:0] c64_bus_addr;
   wire [7:0] c64_ram_rdata;
@@ -820,7 +1143,7 @@ module core_top (
       .ce  (1'b1),
       .oe  (1'b1),
       .addr(ext_ram_we_r ? ext_addr : c64_bus_addr),
-      .do  (c64_ram_rdata),
+      .\do (c64_ram_rdata),
       .di  (ext_ram_we_r ? ext_data : c64_ram_wdata),
       .we  (ext_ram_we_r | c64_ram_we)
   );
@@ -835,7 +1158,7 @@ module core_top (
       .ce  (1'b1),
       .oe  (1'b1),
       .addr(ext_rom_char_we ? ext_addr : c64_bus_addr),
-      .do  (c64_rom_char_data),
+      .\do (c64_rom_char_data),
       .di  (ext_data),
       .we  (ext_rom_char_we)
   );
@@ -850,7 +1173,7 @@ module core_top (
       .ce  (1'b1),
       .oe  (1'b1),
       .addr(ext_rom_basic_we ? ext_addr : c64_bus_addr),
-      .do  (c64_rom_basic_data),
+      .\do (c64_rom_basic_data),
       .di  (ext_data),
       .we  (ext_rom_basic_we)
   );
@@ -865,7 +1188,7 @@ module core_top (
       .ce  (1'b1),
       .oe  (1'b1),
       .addr(ext_rom_kernal_we ? ext_addr : c64_bus_addr),
-      .do  (c64_rom_kernal_data),
+      .\do (c64_rom_kernal_data),
       .di  (ext_data),
       .we  (ext_rom_kernal_we)
   );
@@ -907,7 +1230,7 @@ module core_top (
       .ce  (1'b1),
       .oe  (1'b1),
       .addr(ext_rom_cart_we ? ext_addr : c64_cart_addr),
-      .do  (c64_cart_idata),
+      .\do (c64_cart_idata),
       .di  (ext_rom_cart_we ? ext_data : c64_cart_odata),
       .we  (ext_rom_cart_we | c64_cart_we)
   );
@@ -965,37 +1288,6 @@ module core_top (
   );
 
 `endif
-
-  //
-  // Memories for My1541
-  //
-  apf_spram #(
-      .aw(11),
-      .dw(8)
-  ) u_c1541_ram (
-      .clk (clk_8mhz),
-      .rst (rst),
-      .ce  (1'b1),
-      .oe  (1'b1),
-      .addr(c1541_bus_addr),
-      .do  (c1541_ram_rdata),
-      .di  (c1541_ram_wdata),
-      .we  (c1541_ram_we)
-  );
-
-  apf_spram #(
-      .aw(14),
-      .dw(8)
-  ) u_c1541_rom (
-      .clk (clk_8mhz),
-      .rst (rst),
-      .ce  (1'b1),
-      .oe  (1'b1),
-      .addr(ext_rom_1541_we ? ext_addr : c1541_bus_addr),
-      .do  (c1541_rom_data),
-      .di  (ext_data),
-      .we  (ext_rom_1541_we)
-  );
 
   wire cpu_mem_valid;
   wire cpu_mem_instr;
@@ -1063,6 +1355,18 @@ module core_top (
   assign ram_wdata = cpu_mem_wdata;
   assign ram_wstrb = osd_ram_access ? 4'b0000 : cpu_mem_wstrb;
 
+  wire [31:0] disk_status_word = {
+    7'd0,
+    disk_req_len,
+    drive_mounted,
+    drive_led,
+    disk_ready,
+    disk_service_busy,
+    disk_req_drive,
+    disk_req_write,
+    disk_req_valid
+  };
+
   always @* begin
     casex (cpu_mem_addr)
       32'h0xxx_xxxx: cpu_mem_rdata = rom_rdata;
@@ -1080,8 +1384,11 @@ module core_top (
       32'h2000_0028: cpu_mem_rdata = cont3_trig_s;
       32'h2000_002c: cpu_mem_rdata = cont4_trig_s;
       32'h3000_000c: cpu_mem_rdata = c64_ctrl;
-      32'h3000_0100: cpu_mem_rdata = {c1541_motor_on, c1541_led_on, c1541_track_no};
+      32'h3000_0100: cpu_mem_rdata = disk_status_word;
+      32'h3000_0104: cpu_mem_rdata = disk_req_lba;
+      32'h3000_0108: cpu_mem_rdata = disk_req_blk_cnt;
       32'h4xxx_xxxx: cpu_mem_rdata = bridge_rdata;
+      32'h6xxx_xxxx: cpu_mem_rdata = disk_cpu_rd_data;
       32'h7xxx_xxxx: cpu_mem_rdata = bridge_dpram_rdata;
       32'h9xxx_xxxx: cpu_mem_rdata = dataslot_table_rd_data_cpu;
       default: cpu_mem_rdata = 0;
@@ -1106,14 +1413,48 @@ module core_top (
   reg [3:0] c64_sid_cfg = 4'b0000;
   reg       c64_sid_digifix = 1'b1;
   reg       c64_cia_mode = 1'b0;       // 0=6526, 1=8521
-  reg [12:0] c1541_track_len;
+  reg [2:0] disk_drive_rpm = 3'b000;
+  reg       disk_drive_wobble = 1'b0;
   always @(posedge clk_8mhz) begin
-    if (rst) c64_ctrl <= 0;
+    if (rst) begin
+      c64_ctrl <= 0;
+      drive_mounted_cpu <= 2'b00;
+      disk_mount_toggle <= 2'b00;
+      disk_drive_size[0] <= 32'd0;
+      disk_drive_size[1] <= 32'd0;
+      disk_drive_type[0] <= 2'b00;
+      disk_drive_type[1] <= 2'b00;
+      disk_drive_readonly <= 2'b00;
+      disk_commit_valid_len <= 15'd0;
+      disk_commit_empty_gcr <= 1'b0;
+      disk_commit_from_cpu <= 1'b0;
+      disk_cpu_ack_toggle <= 1'b0;
+    end
     else if (cpu_mem_addr == 32'h3000000c && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
       c64_ctrl <= cpu_mem_wdata[6:0];
-    else if (cpu_mem_addr == 32'h30000104 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111) begin
-      c1541_track_len <= cpu_mem_wdata[12:0];
-      $display("track_len: %d, track_no: %d", c1541_track_len, c1541_track_no);
+    else if (cpu_mem_valid && cpu_mem_wstrb == 4'b1111) begin
+      case (cpu_mem_addr)
+        32'h3000_010c: begin
+          disk_commit_valid_len <= cpu_mem_wdata[30:16];
+          disk_commit_empty_gcr <= cpu_mem_wdata[1];
+          disk_commit_from_cpu <= cpu_mem_wdata[2];
+          if (cpu_mem_wdata[0]) disk_cpu_ack_toggle <= ~disk_cpu_ack_toggle;
+        end
+        32'h3000_0110: begin
+          drive_mounted_cpu[0] <= cpu_mem_wdata[0];
+          disk_drive_readonly[0] <= cpu_mem_wdata[1];
+          disk_drive_type[0] <= cpu_mem_wdata[3:2];
+          disk_mount_toggle[0] <= ~disk_mount_toggle[0];
+        end
+        32'h3000_0114: disk_drive_size[0] <= cpu_mem_wdata;
+        32'h3000_0118: begin
+          drive_mounted_cpu[1] <= cpu_mem_wdata[0];
+          disk_drive_readonly[1] <= cpu_mem_wdata[1];
+          disk_drive_type[1] <= cpu_mem_wdata[3:2];
+          disk_mount_toggle[1] <= ~disk_mount_toggle[1];
+        end
+        32'h3000_011c: disk_drive_size[1] <= cpu_mem_wdata;
+      endcase
     end
   end
 
@@ -1145,6 +1486,7 @@ module core_top (
         32'h4xxx_xxxx: cpu_mem_ready <= bridge_ack_pulse;
         32'h5000_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & ext_ram_ready;
         32'h51xx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & clk_8mhz_1mhz_ph1_en;
+        32'h6xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h5xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h7xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h9xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
@@ -1155,7 +1497,7 @@ module core_top (
 
   // ROM - CPU code.
   sprom #(
-      .aw(11),
+      .aw(12),
       .dw(32),
       .MEM_INIT_FILE("bios.vh")
   ) u_rom (
@@ -1164,7 +1506,7 @@ module core_top (
       .ce  (cpu_mem_valid && cpu_mem_addr[31:28] == 4'h0),
       .oe  (1'b1),
       .addr(cpu_mem_addr[31:2]),
-      .do  (rom_rdata)
+      .\do (rom_rdata)
   );
 
   // RAM - shared between CPU and OSD. OSD has priority.
@@ -1172,7 +1514,7 @@ module core_top (
   generate
     for (gi = 0; gi < 4; gi = gi + 1) begin : ram
       apf_spram #(
-          .aw(10),
+          .aw(11),
           .dw(8)
       ) u_ram (
           .clk (clk_8mhz),
@@ -1180,7 +1522,7 @@ module core_top (
           .ce  (osd_ram_access || (cpu_mem_valid && cpu_mem_addr[31:28] == 4'h1)),
           .oe  (1'b1),
           .addr(ram_addr[31:2]),
-          .do  (ram_rdata[(gi+1)*8-1:gi*8]),
+          .\do (ram_rdata[(gi+1)*8-1:gi*8]),
           .di  (ram_wdata[(gi+1)*8-1:gi*8]),
           .we  (ram_wstrb[gi])
       );
@@ -1232,6 +1574,8 @@ module core_top (
         32'hA000_002c: c64_sid_mode <= bridge_wr_data[2:0];
         32'hA000_0030: c64_sid_cfg <= bridge_wr_data[3:0];
         32'hA000_0034: c64_sid_digifix <= bridge_wr_data[0];
+        32'hA000_0038: disk_drive_rpm <= bridge_wr_data[2:0];
+        32'hA000_003c: disk_drive_wobble <= bridge_wr_data[0];
       endcase
     end
   end
@@ -1343,26 +1687,6 @@ module core_top (
       .b_addr(cpu_mem_addr[31:2]),
       .b_din (32'h0),
       .b_dout(dataslot_table_rd_data_cpu)
-  );
-
-  // 8KB of DP track memory for 1541. Fed by bridge, read by 1541
-  bram_block_dp #(
-      .DATA(32),
-      .ADDR(11)
-  ) u_bridge_1541_track_ram (
-      .a_clk(clk_74a),
-      .a_wr(bridge_wr && bridge_addr[31:28] == 4'h9),
-      .a_addr(bridge_addr[31:2]),
-      .a_din({
-        bridge_wr_data[7:0], bridge_wr_data[15:8], bridge_wr_data[23:16], bridge_wr_data[31:24]
-      }),
-      .a_dout(  /* NC */),
-
-      .b_clk (clk_8mhz),
-      .b_wr  (1'b0),
-      .b_addr(c1541_track_mem_addr),
-      .b_din (32'h0),
-      .b_dout(c1541_track_mem_data)
   );
 
 endmodule

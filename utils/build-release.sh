@@ -6,6 +6,7 @@ DIST=dist
 STAGING=_staging_
 DATE=$(date +'%Y-%m-%d')
 VERSION=$1
+APC_MEMORY=${APC_MEMORY:-8192}
 
 rm -f MyC64-Pocket.zip
 rm -rf ${STAGING}
@@ -15,19 +16,8 @@ make clean
 make
 popd
 
-# The C64 machine is now imported from MiSTer RTL. Keep the retained 1541
-# generated source refreshed when Amaranth is available, but allow apc-only
-# builders to use the checked-in generated Verilog.
-if python3 -c 'import amaranth' >/dev/null 2>&1; then
-  pushd src/fpga/core/my1541-rtl
-  python3 my1541.py
-  popd
-else
-  test -f src/fpga/core/my1541-rtl/my1541.v
-fi
-
 if command -v apc >/dev/null 2>&1; then
-  apc --clean .
+  apc --memory "${APC_MEMORY}" --clean .
 else
   quartus_sh --flow compile ./src/fpga/ap_core.qpf
   python3 utils/reverse-bits.py src/fpga/output_files/ap_core.rbf \
