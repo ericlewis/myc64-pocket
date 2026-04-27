@@ -109,65 +109,23 @@ Cartridges of unsupported formats are silently ignored (and no reset is
 triggered).
 
 
-### D64/G64
+### Disk images
 
-The core contains emulation of a [Commodore
-1541](https://en.wikipedia.org/wiki/Commodore_1541) floppy disk drive
-(currently read-only). Emulation is low level and the real ROMs are used.  As a
-result the decode circuitry need to have the raw
-[GCR](https://en.wikipedia.org/wiki/Group_coded_recording) bitstream (that the
-read head of a real drive would see) as its input.
+The core contains low-level emulation of Commodore IEC disk drives using the
+real drive ROMs. Disk images are mounted through the **Drive 8** and
+**Drive 9** entries in the Core Settings menu.
 
-In other words the common `.d64`
-[format](http://unusedino.de/ec64/technical/formats/d64.html) is not directly
-supported but rather the lower level `.g64`
-[format](http://www.unusedino.de/ec64/technical/formats/g64.html) must be used.
+The following formats are supported:
 
-A bit further down the road the housekeeping CPU could probably perform this
-conversion on the fly but right now `.d64` files need to be converted to `.g64`
-format manually.
+- `.d64` - sector-backed 1541 image.
+- `.g64` - direct GCR 1541 image.
+- `.d81` - 1581 image.
+- `.t64` - tape archive exposed as a read-only virtual 1541 disk.
 
-The utility program `nibconv` from
-[NIBTools](https://c64preservation.com/dp.php?pg=nibtools) can be used to
-convert between `.d64` and `.g64`.
-
-Usage example:
-
-```sh
-$ nibconv somedisk.d64 somedisk.g64
-```
-#### Obtaining nibtools
-
-##### Windows
-
-You can download pre-build binaries for windows from [c64preservation.com
-files](https://c64preservation.com/files/nibtools/).
-
-##### Linux
-
-For Linux it is obtained and built as follows
-
-```
-$ git clone --recurse-submodules https://github.com/OpenCBM/OpenCBM.git
-$ cd OpenCBM
-$ make -f LINUX/Makefile
-```
-
-##### MacOSX
-
-On MacOSX you can auto-build nibtools using [Homebrew](https://brew.sh) and
-[hitorisensei/homebrew-taps/nibtools](https://github.com/HitoriSensei/homebrew-taps/nibtools)
-tap
-
-```
-$ brew install hitorisensei/homebrew-taps/nibtools
-```
-
-#### Loading G64 images
-
-Select the desired `.g64` file from the **Core Settings->Load G64 Slot**
-browser and the disk image will be inserted into the emulated 1541 floppy
-drive.
+For `.d64`, `.g64`, and `.d81` images the core forwards sector/track reads and
+writes to the Pocket data slot, so normal disk access goes through the emulated
+drive. `.t64` images are converted by the housekeeping CPU into a temporary
+read-only directory and PRG file layout.
 
 At this point the user needs to do normal interaction such as `LOAD"$",8`
 followed by a `LIST` to get a directory listing or simply a `LOAD"*",8`

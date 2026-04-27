@@ -1,9 +1,9 @@
 {
-    "interact": {
-        "magic": "APF_VER_1",
-        "variables": [
+  "interact": {
+    "magic": "APF_VER_1",
+    "variables": [
       {
-        "name": "OSD x-offset",
+        "name": "OSD X Offset",
         "id": 0,
         "type": "slider_u32",
         "enabled": true,
@@ -20,7 +20,7 @@
         }
       },
       {
-        "name": "OSD y-offset",
+        "name": "OSD Y Offset",
         "id": 1,
         "type": "slider_u32",
         "enabled": true,
@@ -37,104 +37,175 @@
         }
       },
       {
-        "name": "Video standard (0 PAL, 1 NTSC)",
+        "name": "Video Standard",
         "id": 2,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
         "address": "0xA0000010",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 1, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "PAL" },
+          { "value": 1, "name": "NTSC" }
+        ]
       },
       {
-        "name": "Palette (0-7)",
+        "name": "Palette",
         "id": 3,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
         "address": "0xA0000014",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 7, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "Palette 0" },
+          { "value": 1, "name": "Palette 1" },
+          { "value": 2, "name": "Palette 2" },
+          { "value": 3, "name": "Palette 3" },
+          { "value": 4, "name": "Palette 4" },
+          { "value": 5, "name": "Palette 5" },
+          { "value": 6, "name": "Palette 6" },
+          { "value": 7, "name": "Palette 7" }
+        ]
       },
       {
-        "name": "Turbo mode (0 off, 1 C128, 2 smart)",
+        "name": "Turbo Mode",
         "id": 4,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
         "address": "0xA0000018",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 2, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "Off" },
+          { "value": 1, "name": "C128" },
+          { "value": 2, "name": "Smart" }
+        ]
       },
       {
-        "name": "Turbo speed (0 2x, 1 3x, 2 4x)",
+        "name": "Turbo Speed",
         "id": 5,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
-        "address": "0xA000001c",
+        "address": "0xA000001C",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 2, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "2x" },
+          { "value": 1, "name": "3x" },
+          { "value": 2, "name": "4x" }
+        ]
       },
       {
-        "name": "SID model mask (bit0 L, bit1 R; 0=6581, 1=8580)",
+        "name": "SID Model",
         "id": 6,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
         "address": "0xA0000020",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 3, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "Both 6581" },
+          { "value": 1, "name": "L 8580, R 6581" },
+          { "value": 2, "name": "L 6581, R 8580" },
+          { "value": 3, "name": "Both 8580" }
+        ]
       },
       {
-        "name": "VIC-II variant (0 656x, 1 856x, 2 early 856x)",
+        "name": "VIC-II Variant",
         "id": 7,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
         "address": "0xA0000024",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 2, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "656x" },
+          { "value": 1, "name": "856x" },
+          { "value": 2, "name": "Early 856x" }
+        ]
       },
       {
-        "name": "CIA type (0 6526, 1 8521)",
+        "name": "CIA Type",
         "id": 8,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
         "address": "0xA0000028",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 1, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "6526" },
+          { "value": 1, "name": "8521" }
+        ]
       },
       {
-        "name": "Right SID port (0 same, 1 DE00, 2 D420, 3 D500, 4 DF00)",
+        "name": "Right SID Port",
         "id": 9,
-        "type": "slider_u32",
+        "type": "list",
         "enabled": true,
-        "address": "0xA000002c",
+        "address": "0xA000002C",
         "writeonly": true,
         "persist": true,
         "defaultval": 0,
-        "graphical": { "signed": false, "min": 0, "max": 4, "adjust_small": 1, "adjust_large": 1 }
+        "options": [
+          { "value": 0, "name": "Same" },
+          { "value": 1, "name": "DE00" },
+          { "value": 2, "name": "D420" },
+          { "value": 3, "name": "D500" },
+          { "value": 4, "name": "DF00" }
+        ]
       },
       {
-        "name": "SID digifix (0 off, 1 on)",
+        "name": "SID Digifix",
         "id": 10,
-        "type": "slider_u32",
+        "type": "check",
         "enabled": true,
         "address": "0xA0000034",
         "writeonly": true,
         "persist": true,
         "defaultval": 1,
-        "graphical": { "signed": false, "min": 0, "max": 1, "adjust_small": 1, "adjust_large": 1 }
+        "value": 1,
+        "value_off": 0
+      },
+      {
+        "name": "Drive RPM",
+        "id": 11,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA0000038",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "300 RPM" },
+          { "value": 1, "name": "301 RPM" },
+          { "value": 2, "name": "302 RPM" },
+          { "value": 3, "name": "305 RPM" },
+          { "value": 4, "name": "310 RPM" },
+          { "value": 5, "name": "295 RPM" },
+          { "value": 6, "name": "298 RPM" },
+          { "value": 7, "name": "299 RPM" }
+        ]
+      },
+      {
+        "name": "Drive Wobble",
+        "id": 12,
+        "type": "check",
+        "enabled": true,
+        "address": "0xA000003C",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "value": 1,
+        "value_off": 0
       }
     ]
-    }
+  }
 }
